@@ -31,7 +31,7 @@ const DATA_FLOW_STEPS = [
 export function SecuritySection({ onOpenSecurityDoc }: SecuritySectionProps) {
   return (
     <section id="security" className="relative border-b border-[#172B35] bg-[#070C10]">
-      <div className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+      <div className="mx-auto max-w-[1200px] px-6 py-20 md:pt-22 md:pb-28">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-5">
             <p className="font-mono text-xs text-[#F2C94C]">03 · Security & Ownership</p>

@@ -97,7 +97,7 @@ function FeaturePanel({
 export function FeaturesSection({ onSelectUpgrade }: FeaturesSectionProps) {
   return (
     <section id="features" className="border-b border-[#172B35] bg-[#080E12]">
-      <div className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+      <div className="mx-auto max-w-[1200px] px-6 py-20 md:pt-22 md:pb-28">
         <div className="max-w-2xl">
           <p className="font-mono text-xs text-[#22D3EE]">02 · Capabilities</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-[#F4FAFC] md:text-4xl">
