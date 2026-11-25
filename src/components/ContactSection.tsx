@@ -66,7 +66,7 @@ export function ContactSection() {
 
   return (
     <section id="contact" className="border-b border-[#172B35] bg-[#070C10]">
-      <div className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+      <div className="mx-auto max-w-[1200px] px-6 py-20 md:pt-22 md:pb-28">
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12">
           {/* Left editorial column */}
           <div className="lg:col-span-5">

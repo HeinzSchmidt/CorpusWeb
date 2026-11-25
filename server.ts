@@ -401,6 +401,19 @@ async function startServer() {
     });
   }
 
+  // Central error handler (Express 4 requires all four args).
+  // Logs unexpected failures with request context so they surface in
+  // `docker logs corpusweb` instead of returning Express's default HTML page.
+  app.use((err: unknown, req: Request, res: Response, next: (err?: unknown) => void) => {
+    console.error(`[corpusweb] Unhandled error on ${req.method} ${req.originalUrl}:`, err);
+    if (res.headersSent) {
+      // Response already started — delegate to Express's default handling.
+      next(err);
+      return;
+    }
+    res.status(500).json({ error: 'Internal server error. Please try again.' });
+  });
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Corpus server running on http://0.0.0.0:${PORT}`);
   });

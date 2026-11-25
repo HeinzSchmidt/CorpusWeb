@@ -1,0 +1,35 @@
+# =============================================================================
+# CorpusWeb — local Docker deployment for testing.
+#
+#   docker compose up -d      # build (if needed) + start in background
+#   docker compose logs -f    # watch container logs
+#   docker compose down       # stop and remove the container (keeps the image)
+#
+# Host port 3500 is reserved for this service only. The corpus app runs
+# elsewhere — do not publish any other ports from this file.
+#
+# No secrets live in this file or in the image. To exercise reCAPTCHA
+# locally, create an UNTRACKED .env file next to this compose file
+# (compose auto-loads it) with values from .env.example, e.g.:
+#   RECAPTCHA_SECRET_KEY=...
+#   VITE_RECAPTCHA_SITE_KEY=...
+# =============================================================================
+services:
+  corpusweb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: corpusweb:local
+    # Fixed container name so `docker logs corpusweb` is predictable.
+    container_name: corpusweb
+    ports:
+      # host:container — 3500 is the only published port (see rule above).
+      - "3500:3000"
+    environment:
+      # App listens on this port inside the container (server.ts default).
+      PORT: "3000"
+      # Optionally pin the site origin used for canonical/OG meta injection.
+      # Left unset on purpose: server.ts derives it from the request Host
+      # header, which correctly yields http://localhost:3500 locally.
+      # APP_URL: "http://localhost:3500"
+    restart: unless-stopped

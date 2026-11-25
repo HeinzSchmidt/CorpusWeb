@@ -8,7 +8,7 @@ export function WhatIsCorpusSection() {
 
   return (
     <section id="what-is-corpus" className="border-b border-[#172B35] bg-[#070C10]">
-      <div className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+      <div className="mx-auto max-w-[1200px] px-6 py-20 md:pt-22 md:pb-28">
         {/* Top split: Proposition & Architecture Summary */}
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-12 lg:items-stretch">
           <div className="flex flex-col justify-between lg:col-span-7">

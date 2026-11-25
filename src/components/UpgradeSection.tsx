@@ -191,7 +191,7 @@ export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
 
   return (
     <section id="upgrade" className="relative border-b border-[#172B35] bg-[#080E12]">
-      <div className="mx-auto max-w-[1200px] px-6 py-20 md:py-28">
+      <div className="mx-auto max-w-[1200px] px-6 py-20 md:pt-22 md:pb-28">
         {/* Section Heading & Transparent $4/mo Positioning */}
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-end">
           <div className="lg:col-span-7">
