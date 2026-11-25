@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-obsidian: #070C10;
+  --color-panel: #0C141A;
+  --color-panel-elevated: #101B23;
+  --color-hairline: #172B35;
+  --color-hairline-strong: #234352;
+  --color-corpus-cyan: #22D3EE;
+  --color-corpus-cyan-dim: #169AB0;
+  --color-corpus-gold: #F2C94C;
+  --color-corpus-amber: #D9A234;
+}
+
+@layer base {
+  html {
+    background-color: #070C10;
+    color: #E6EFF2;
+    font-family: var(--font-sans);
+    scroll-padding-top: 5.5rem;
+  }
+
+  body {
+    letter-spacing: 0.008em;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid #22D3EE;
+    outline-offset: 2px;
+  }
+}
+
+.corpus-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.045) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.corpus-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.018) 0px,
+    rgba(255, 255, 255, 0.018) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.corpus-wordmark {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, #FDE073 0%, #F2C94C 52%, #C9911E 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

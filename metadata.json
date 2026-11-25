@@ -1,0 +1,6 @@
+{
+  "name": "Corpus",
+  "description": "A browser-based AI studio for generating text, image, and video assets across multiple LLM providers and MCP tools, with private browser-side storage and optional Library export (Google Drive, GitHub, and Local Folder).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
