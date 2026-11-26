@@ -28,6 +28,12 @@ services:
     environment:
       # App listens on this port inside the container (server.ts default).
       PORT: "3000"
+      # Stripe webhook -> Corpus internal premium sync (step 2). The secrets
+      # stay empty by default so the route fails closed until .env provides
+      # them; CORPUS_PREMIUM_URL defaults to the agreed Hetzner endpoint.
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      CORPUS_PREMIUM_HMAC_SECRET: ${CORPUS_PREMIUM_HMAC_SECRET:-}
+      CORPUS_PREMIUM_URL: ${CORPUS_PREMIUM_URL:-https://corpus-api.cybrnut.com/internal/premium}
       # Optionally pin the site origin used for canonical/OG meta injection.
       # Left unset on purpose: server.ts derives it from the request Host
       # header, which correctly yields http://localhost:3500 locally.

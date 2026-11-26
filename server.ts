@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import { handleStripeWebhook, type StripeWebhookRequest } from './stripe.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -236,6 +237,16 @@ async function verifyRecaptchaToken(
 async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
+
+  // Stripe webhook MUST be registered before the JSON parser: it verifies the
+  // Stripe-Signature header over the RAW bytes, so express.raw keeps them in
+  // req.rawBody. A JSON-parsed-then-reserialized body would never verify.
+  app.post(
+    '/api/stripe/webhook',
+    express.raw({ type: 'application/json', limit: '256kb' }),
+    (req, res) => void handleStripeWebhook(req as StripeWebhookRequest, res)
+  );
+
   app.use(express.json({ limit: '32kb' }));
 
   // Expose ONLY the public reCAPTCHA site key to the browser (never the secret key)
