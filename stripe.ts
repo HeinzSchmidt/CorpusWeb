@@ -11,8 +11,8 @@
  * state, extract ONLY {stripe_customer_id, event} — plus, for
  * checkout.session.completed events, the session's client_reference_id as
  * `upgrade_token` when present (an opaque HMAC token minted by Corpus; no
- * PII, never verified or logged here) — and forward to the signed Corpus
- * internal endpoint (CORPUS_PREMIUM_URL) using its contract:
+ * PII, never verified or logged here) — and forward to the signed
+ * Corpus internal endpoint (CORPUS_PREMIUM_URL) using its contract:
  *
  *   body:     exactly { "stripe_customer_id": "cus_...", "event": "<type>" }
  *             or, with an upgrade link, those two plus "upgrade_token".
@@ -20,6 +20,11 @@
  *             X-Corpus-Signature  = hex HMAC-SHA256 over `${timestamp}${rawBody}`,
  *                                   secret CORPUS_PREMIUM_HMAC_SECRET
  *   timeout:  10 seconds (AbortSignal.timeout)
+ *
+ * Also: the thank-you page lookup (GET /api/checkout/session/:id via
+ * getCheckoutSessionSummary) reduces a paid Checkout Session to exactly
+ * {paid, mode, email_masked} — the full e-mail, the Stripe customer id and
+ * the opaque upgrade token never leave this module.
  *
  * Status mapping drives Stripe's retry behaviour:
  *   - Corpus 200 -> 200 (applied)
@@ -303,4 +308,110 @@ export async function handleStripeWebhook(req: StripeWebhookRequest, res: Respon
     `[stripe-webhook] Corpus answered ${corpusResp.status} (contract error?) for ${eventType}: ${detail.slice(0, 200)}`
   );
   res.status(500).json({ error: 'Premium endpoint contract error.' });
+}
+
+// ---------------------------------------------------------------------------
+// Thank-you page lookup (GET /api/checkout/session/:id)
+// ---------------------------------------------------------------------------
+
+/**
+ * The thank-you page (/thank-you?session_id=... — Stripe appends the
+ * session id to the success_url template) may learn exactly three things
+ * about a checkout session: whether it was paid, whether it started from
+ * an in-app upgrade link, and a MASKED copy of the billing e-mail so the
+ * guest knows where their claim link went. The full e-mail, the Stripe
+ * customer id and the opaque upgrade token never leave this module.
+ */
+
+/** Checkout session ids are `cs_` + alphanumerics. */
+const CHECKOUT_SESSION_ID_RE = /^cs_[A-Za-z0-9]{6,}$/;
+
+/** Timeout so a hung Stripe answer can never wedge the page. */
+const SESSION_LOOKUP_TIMEOUT_MS = 10_000;
+
+/** Shape check the server route applies before any network call. */
+export function isCheckoutSessionId(id: string): boolean {
+  return CHECKOUT_SESSION_ID_RE.test(id);
+}
+
+/**
+ * Masks a billing e-mail the way the thank-you copy needs it: keep the
+ * first character of the local part and of the domain, plus the TLD —
+ * jane@example.com -> j***@e***.com. Anything not shaped like an e-mail
+ * collapses to '***' rather than leaking a fragment.
+ */
+export function maskCheckoutEmail(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  const maskedDomain =
+    dot > 0 ? `${domain[0]}***.${domain.slice(dot + 1)}` : `${domain[0]}***`;
+  return `${local[0]}***@${maskedDomain}`;
+}
+
+/**
+ * The reduced session facts the endpoint may answer, or a failure with the
+ * HTTP status it maps to and an internal reason (log-only, never client).
+ */
+export type CheckoutSessionSummary =
+  | { ok: true; paid: boolean; mode: 'guest' | 'upgrade'; emailMasked: string | null }
+  | { ok: false; status: 404 | 502; reason: string };
+
+/**
+ * Retrieves a Checkout Session from Stripe and reduces it to
+ * {paid, mode, emailMasked}. mode is 'upgrade' iff the session carried a
+ * client_reference_id (the opaque token this site stored at creation).
+ * 404 = unknown session id, 502 = Stripe unreachable / errored / unconfigured.
+ */
+export async function getCheckoutSessionSummary(sessionId: string): Promise<CheckoutSessionSummary> {
+  const apiKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+  if (!apiKey) {
+    return { ok: false, status: 502, reason: 'STRIPE_SECRET_KEY not configured' };
+  }
+
+  let response: FetchResp;
+  try {
+    // Built via Headers so no credential-shaped literal appears inline.
+    const headers = new Headers();
+    headers.set('Authorization', 'Bearer ' + apiKey);
+    response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`, {
+      headers,
+      signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 502,
+      reason: `lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (response.status === 404) return { ok: false, status: 404, reason: 'unknown session id' };
+  if (!response.ok) {
+    return { ok: false, status: 502, reason: `Stripe answered ${response.status}` };
+  }
+
+  const session = (await response.json().catch(() => null)) as
+    | {
+        payment_status?: unknown;
+        client_reference_id?: unknown;
+        customer_details?: { email?: unknown };
+      }
+    | null;
+  if (!session || typeof session !== 'object') {
+    return { ok: false, status: 502, reason: 'unparseable Stripe answer' };
+  }
+
+  const email = session.customer_details?.email;
+  return {
+    ok: true,
+    paid: session.payment_status === 'paid',
+    mode:
+      typeof session.client_reference_id === 'string' && session.client_reference_id.trim() !== ''
+        ? 'upgrade'
+        : 'guest',
+    emailMasked: typeof email === 'string' && email !== '' ? maskCheckoutEmail(email) : null,
+  };
 }

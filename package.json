@@ -11,6 +11,8 @@
     "test:webhook": "tsx --test --test-force-exit tests/stripe-webhook.test.ts",
     "test:docs": "tsx --test tests/docs-page.test.ts",
     "test:checkout": "tsx --test --test-force-exit tests/checkout.test.ts",
+    "test:checkoutsession": "tsx --test --test-force-exit tests/checkout-session.test.ts",
+    "test:checkoutnotice": "tsx --test tests/checkout-notice.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

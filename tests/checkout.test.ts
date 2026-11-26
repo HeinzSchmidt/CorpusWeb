@@ -196,7 +196,10 @@ test('creates a subscription session and returns the hosted URL (reCAPTCHA off)'
   assert.equal(params.get('mode'), 'subscription');
   assert.equal(params.get('line_items[0][price]'), STRIPE_PRICE_ID);
   assert.equal(params.get('line_items[0][quantity]'), '1');
-  assert.equal(params.get('success_url'), 'https://corpuspremium.cybrnut.com/thank-you');
+  assert.equal(
+    params.get('success_url'),
+    'https://corpuspremium.cybrnut.com/thank-you?session_id={CHECKOUT_SESSION_ID}'
+  );
   assert.equal(params.get('cancel_url'), 'https://corpuspremium.cybrnut.com/cancel');
 
   const auth = (call.headers as Headers | Record<string, string>).get
