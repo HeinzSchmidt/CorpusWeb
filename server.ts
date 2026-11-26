@@ -4,7 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { handleStripeWebhook, type StripeWebhookRequest } from './stripe.ts';
+import {
+  handleStripeWebhook,
+  type StripeWebhookRequest,
+  getCheckoutSessionSummary,
+  isCheckoutSessionId,
+} from './stripe.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -369,9 +374,12 @@ async function startServer() {
       billingEmail = email;
     }
 
+    // Stripe substitutes {CHECKOUT_SESSION_ID} (template literal, braces must
+    // stay unencoded) so the thank-you page can look up the session it just
+    // paid — see GET /api/checkout/session/:id below.
     const successUrl =
       (process.env.STRIPE_CHECKOUT_SUCCESS_URL || '').trim() ||
-      'https://corpuspremium.cybrnut.com/thank-you';
+      'https://corpuspremium.cybrnut.com/thank-you?session_id={CHECKOUT_SESSION_ID}';
     const cancelUrl =
       (process.env.STRIPE_CHECKOUT_CANCEL_URL || '').trim() ||
       'https://corpuspremium.cybrnut.com/cancel';
@@ -462,6 +470,36 @@ async function startServer() {
     }
 
     res.json({ url: data.url });
+  });
+
+  // ------------------------------------------------------------------
+  // Thank-you page lookup (GET /api/checkout/session/:id): the success_url
+  // lands on /thank-you?session_id={CHECKOUT_SESSION_ID} and the page asks
+  // here for exactly {paid, mode, email_masked}. The full e-mail, the
+  // Stripe customer id and the opaque upgrade token stay on this side of
+  // the wire (see stripe.ts getCheckoutSessionSummary).
+  // ------------------------------------------------------------------
+  app.get('/api/checkout/session/:id', async (req: Request, res: Response) => {
+    const sessionId = req.params.id;
+    if (!isCheckoutSessionId(sessionId)) {
+      // 400, not 404: a malformed id is not a "known-but-unknown session".
+      res.status(400).json({ error: 'Unknown checkout session.' });
+      return;
+    }
+
+    const summary = await getCheckoutSessionSummary(sessionId);
+    if (!summary.ok) {
+      if (summary.status === 404) {
+        res.status(404).json({ error: 'Unknown checkout session.' });
+        return;
+      }
+      // Stripe-side failure: log the reason, answer a generic 502 (session
+      // ids are Stripe resource ids, not PII).
+      console.error(`[checkout-session] lookup failed for ${sessionId}: ${summary.reason}`);
+      res.status(502).json({ error: 'Checkout lookup failed right now. Please try again.' });
+      return;
+    }
+    res.json({ paid: summary.paid, mode: summary.mode, email_masked: summary.emailMasked });
   });
 
   // Explicit verification endpoint if called directly by client workflows
