@@ -307,8 +307,15 @@ async function startServer() {
   // ------------------------------------------------------------------
   // Guest checkout start (P4 of the checkout plan): creates a Stripe
   // Checkout Session (subscription mode, single premium price) and returns
-  // its hosted URL to the browser. No PII is collected on this site —
-  // the card/e-mail handling happens entirely on Stripe's page.
+  // its hosted URL to the browser. Card handling happens entirely on
+  // Stripe's page; the ONLY optional PII this site accepts is a billing
+  // e-mail, used exclusively for the Stripe customer lookup/prefill below
+  // (never stored, never logged, never forwarded).
+  //
+  // An arriving user with an in-app upgrade link sends the opaque
+  // `upgradeToken` (?upgrade= on this site, minted by Corpus). It is put
+  // verbatim into the session's client_reference_id; this server does NOT
+  // verify it — Corpus /internal/premium does when the session completes.
   // ------------------------------------------------------------------
   app.post('/api/checkout', async (req: Request, res: Response) => {
     const clientIp = req.ip || 'unknown';
@@ -336,6 +343,32 @@ async function startServer() {
       return;
     }
 
+    // Opaque upgrade token (see the section comment): validated here ONLY for
+    // shape. Stripe's client_reference_id allows up to 500 chars; the token
+    // is base64url(payload.signature), so a tighter charset check keeps a
+    // tampered URL from wasting a session-creation call.
+    let upgradeToken = '';
+    if (body.upgradeToken !== undefined && body.upgradeToken !== null) {
+      if (typeof body.upgradeToken !== 'string' || !/^[A-Za-z0-9._~-]{1,500}$/.test(body.upgradeToken)) {
+        res.status(400).json({ error: 'Invalid upgrade link. Please open it again from the Corpus app.' });
+        return;
+      }
+      upgradeToken = body.upgradeToken;
+    }
+
+    // Optional billing e-mail: lets a returning buyer reuse their existing
+    // Stripe customer instead of accumulating duplicates (the value never
+    // leaves this request except to the two Stripe calls below).
+    let billingEmail = '';
+    if (body.email !== undefined && body.email !== null && body.email !== '') {
+      const email = String(body.email).trim();
+      if (email.length < 3 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        res.status(400).json({ error: 'That e-mail address does not look valid.' });
+        return;
+      }
+      billingEmail = email;
+    }
+
     const successUrl =
       (process.env.STRIPE_CHECKOUT_SUCCESS_URL || '').trim() ||
       'https://corpuspremium.cybrnut.com/thank-you';
@@ -350,6 +383,52 @@ async function startServer() {
       success_url: successUrl,
       cancel_url: cancelUrl,
     });
+    if (upgradeToken) {
+      formBody.set('client_reference_id', upgradeToken);
+    }
+
+    // Customer dedupe: look up an existing Stripe customer by e-mail and
+    // attach it to the session; otherwise let Stripe prefill the e-mail so
+    // the NEW customer carries it (Corpus links accounts by e-mail on the
+    // webhook). A failed lookup is fail-soft: the checkout still starts.
+    if (billingEmail) {
+      const lookupHeaders = new Headers({ 'Content-Type': 'application/x-www-form-urlencoded' });
+      lookupHeaders.set('Authorization', 'Bearer ' + apiKey);
+      let existingCustomerId: string | null = null;
+      let lookupFailed = false;
+      try {
+        const lookup = await fetch(
+          `https://api.stripe.com/v1/customers?email=${encodeURIComponent(billingEmail)}&limit=1`,
+          { method: 'GET', headers: lookupHeaders }
+        );
+        if (lookup.ok) {
+          const data = (await lookup.json()) as { data?: Array<{ id?: unknown }> };
+          const first = data.data?.[0];
+          if (first && typeof first.id === 'string' && /^cus_[A-Za-z0-9]{6,}$/.test(first.id)) {
+            existingCustomerId = first.id;
+          }
+        } else {
+          lookupFailed = true;
+        }
+      } catch (err) {
+        lookupFailed = true;
+        console.warn(
+          `[checkout] customer lookup failed (${err instanceof Error ? err.message : 'unknown'}); creating a new customer`
+        );
+      }
+      if (existingCustomerId) {
+        formBody.set('customer', existingCustomerId);
+        console.info(`[checkout] reusing existing Stripe customer ${existingCustomerId}`);
+      } else if (lookupFailed) {
+        // Unknown whether the e-mail already has a customer: keep today's
+        // behaviour (no customer params) rather than risking a duplicate.
+        console.info('[checkout] e-mail prefill skipped because the lookup failed');
+      } else {
+        formBody.set('customer_email', billingEmail);
+        console.info('[checkout] no existing customer found; prefilling the e-mail on Stripe');
+      }
+    }
+
     // Stripe API auth header: built via Headers so no credential-shaped
     // literal ever appears inline in the source.
     const fetchHeaders = new Headers({ 'Content-Type': 'application/x-www-form-urlencoded' });
