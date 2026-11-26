@@ -12,6 +12,7 @@ import { SecuritySection } from './components/SecuritySection';
 import { UpgradeSection } from './components/UpgradeSection';
 import { ContactSection } from './components/ContactSection';
 import { DocsPage } from './components/DocsPage';
+import { CheckoutNoticePage } from './components/CheckoutNoticePage';
 import { Footer } from './components/Footer';
 import { LegalModal } from './components/LegalModal';
 import type { LegalDoc } from './data/corpusData';
@@ -22,6 +23,10 @@ export default function App() {
   // The server SPA-fallbacks every path to index.html, so /docs is a
   // client-side route: same no-router pattern the app uses for /premium.
   const isDocsRoute = window.location.pathname === '/docs';
+  // Stripe checkout landing pages (success_url / cancel_url, P4).
+  const isThankYouRoute = window.location.pathname === '/thank-you';
+  const isCancelRoute = window.location.pathname === '/cancel';
+  const isCheckoutNoticeRoute = isThankYouRoute || isCancelRoute;
 
   useEffect(() => {
     void preloadRecaptcha();
@@ -30,8 +35,12 @@ export default function App() {
   useEffect(() => {
     if (isDocsRoute) {
       document.title = 'Documentation · Corpus';
+    } else if (isThankYouRoute) {
+      document.title = 'Payment received · Corpus Premium';
+    } else if (isCancelRoute) {
+      document.title = 'Checkout cancelled · Corpus Premium';
     }
-  }, [isDocsRoute]);
+  }, [isDocsRoute, isThankYouRoute, isCancelRoute]);
 
   const scrollToUpgrade = () => {
     const el = document.getElementById('upgrade');
@@ -45,7 +54,9 @@ export default function App() {
       <Navbar onNavigateUpgrade={scrollToUpgrade} />
 
       <main>
-        {isDocsRoute ? (
+        {isCheckoutNoticeRoute ? (
+          <CheckoutNoticePage kind={isThankYouRoute ? 'thank-you' : 'cancelled'} />
+        ) : isDocsRoute ? (
           <DocsPage />
         ) : (
           <>

@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-const ALLOWED_ACTIONS = new Set(['contact'] as const);
+const ALLOWED_ACTIONS = new Set(['contact', 'checkout'] as const);
 const ALLOWED_TOPICS = new Set([
   'General Question',
   'Premium & Stripe Billing',
@@ -122,7 +122,7 @@ interface VerificationOutcome {
 
 async function verifyRecaptchaToken(
   token: unknown,
-  expectedAction: 'contact',
+  expectedAction: 'contact' | 'checkout',
   remoteIp?: string
 ): Promise<VerificationOutcome> {
   const { siteKey, secretKey, minScore } = getRecaptchaConfig();
@@ -302,6 +302,87 @@ async function startServer() {
     });
   });
 
+  // ------------------------------------------------------------------
+  // Guest checkout start (P4 of the checkout plan): creates a Stripe
+  // Checkout Session (subscription mode, single premium price) and returns
+  // its hosted URL to the browser. No PII is collected on this site —
+  // the card/e-mail handling happens entirely on Stripe's page.
+  // ------------------------------------------------------------------
+  app.post('/api/checkout', async (req: Request, res: Response) => {
+    const clientIp = req.ip || 'unknown';
+    if (!checkRateLimit(clientIp)) {
+      res.status(429).json({ error: 'Too many checkout attempts. Please wait and try again.' });
+      return;
+    }
+
+    const apiKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+    const priceId = (process.env.STRIPE_PREMIUM_PRICE_ID || '').trim();
+    if (!apiKey || !priceId) {
+      // Fail closed: never advertise a checkout that cannot be created.
+      res
+        .status(503)
+        .json({ error: 'Checkout is not available right now. Please try again later.' });
+      return;
+    }
+
+    // reCAPTCHA v3 on the checkout start (same verification as /api/contact;
+    // the action must be 'checkout').
+    const body = req.body as Record<string, unknown>;
+    const verification = await verifyRecaptchaToken(body.recaptchaToken, 'checkout', clientIp);
+    if (!verification.ok) {
+      res.status(verification.statusCode).json({ error: verification.error });
+      return;
+    }
+
+    const successUrl =
+      (process.env.STRIPE_CHECKOUT_SUCCESS_URL || '').trim() ||
+      'https://corpuspremium.cybrnut.com/thank-you';
+    const cancelUrl =
+      (process.env.STRIPE_CHECKOUT_CANCEL_URL || '').trim() ||
+      'https://corpuspremium.cybrnut.com/cancel';
+
+    const formBody = new URLSearchParams({
+      mode: 'subscription',
+      'line_items[0][price]': priceId,
+      'line_items[0][quantity]': '1',
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+    // Stripe API auth header: built via Headers so no credential-shaped
+    // literal ever appears inline in the source.
+    const fetchHeaders = new Headers({ 'Content-Type': 'application/x-www-form-urlencoded' });
+    fetchHeaders.set('Authorization', 'Bearer ' + apiKey);
+
+    let response: globalThis.Response;
+    try {
+      response = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: formBody.toString(),
+      });
+    } catch {
+      res.status(502).json({ error: 'Could not reach the payment service. Please try again.' });
+      return;
+    }
+
+    const data = (await response.json().catch(() => ({}))) as {
+      url?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok || typeof data.url !== 'string' || !data.url.startsWith('https://')) {
+      // Stripe error messages are operational detail, safe to log (no PII).
+      console.info(
+        `[checkout] session creation failed (HTTP ${response.status}): ${
+          data.error?.message ?? 'unknown error'
+        }`
+      );
+      res.status(502).json({ error: 'Could not start the checkout. Please try again.' });
+      return;
+    }
+
+    res.json({ url: data.url });
+  });
+
   // Explicit verification endpoint if called directly by client workflows
   app.post('/api/recaptcha/verify', async (req: Request, res: Response) => {
     const clientIp = req.ip || 'unknown';
@@ -312,14 +393,14 @@ async function startServer() {
 
     const body = req.body as Record<string, unknown>;
     const action = body.action;
-    if (typeof action !== 'string' || !ALLOWED_ACTIONS.has(action as 'contact')) {
+    if (typeof action !== 'string' || !ALLOWED_ACTIONS.has(action as 'contact' | 'checkout')) {
       res.status(400).json({ error: 'Invalid reCAPTCHA action.' });
       return;
     }
 
     const verification = await verifyRecaptchaToken(
       body.token,
-      action as 'contact',
+      action as 'contact' | 'checkout',
       clientIp
     );
 
