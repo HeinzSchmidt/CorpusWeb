@@ -8,12 +8,14 @@
  * Verified with the standard 5-minute tolerance and a constant-time compare.
  *
  * On a verified event we accept only the four types that matter for premium
- * state, extract ONLY {stripe_customer_id, event} (no PII, no e-mails —
- * nothing else from the event is ever read, stored, or logged), and forward
- * to the signed Corpus internal endpoint (CORPUS_PREMIUM_URL) using its
- * exact contract:
+ * state, extract ONLY {stripe_customer_id, event} — plus, for
+ * checkout.session.completed events, the session's client_reference_id as
+ * `upgrade_token` when present (an opaque HMAC token minted by Corpus; no
+ * PII, never verified or logged here) — and forward to the signed Corpus
+ * internal endpoint (CORPUS_PREMIUM_URL) using its contract:
  *
  *   body:     exactly { "stripe_customer_id": "cus_...", "event": "<type>" }
+ *             or, with an upgrade link, those two plus "upgrade_token".
  *   headers:  X-Corpus-Timestamp  = UNIX epoch seconds
  *             X-Corpus-Signature  = hex HMAC-SHA256 over `${timestamp}${rawBody}`,
  *                                   secret CORPUS_PREMIUM_HMAC_SECRET
@@ -129,16 +131,25 @@ export function computeCorpusSignature(secret: string, timestamp: string, rawBod
 }
 
 /**
- * Pulls the only two facts we may keep out of a verified event: the Stripe
- * customer id and the event type. Returns a reason instead when the event
- * carries no usable customer (logged by the handler; nothing is forwarded).
+ * Pulls the only facts we may keep out of a verified event: the Stripe
+ * customer id and the event type — and, for checkout.session.completed,
+ * the session's client_reference_id (the opaque upgrade token this site put
+ * there at session creation; Corpus verifies it, so it is never inspected
+ * or logged beyond the charset check). Returns a reason instead when the
+ * event carries no usable customer (logged by the handler; nothing is
+ * forwarded).
  * Stripe envelope: event.data.object is the resource (checkout session,
- * subscription, invoice) and .customer on it is the only field we read.
+ * subscription, invoice) and .customer on it is the only other field read.
  */
 export function extractForwardPayload(
   parsed: unknown
-): { stripeCustomerId: string; eventType: string } | { error: string } {
-  const event = parsed as { type?: unknown; data?: { object?: { customer?: unknown } } };
+):
+  | { stripeCustomerId: string; eventType: string; upgradeToken?: string }
+  | { error: string } {
+  const event = parsed as {
+    type?: unknown;
+    data?: { object?: { customer?: unknown; client_reference_id?: unknown } };
+  };
   const eventType = typeof event?.type === 'string' ? event.type : '';
   if (!ALLOWED_EVENT_TYPES.has(eventType)) {
     // Not an error: Stripe sends many types we intentionally ignore (we answer
@@ -149,7 +160,15 @@ export function extractForwardPayload(
   if (typeof customer !== 'string' || !/^cus_[A-Za-z0-9]{6,}$/.test(customer)) {
     return { error: `event ${eventType} carries no usable Stripe customer id` };
   }
-  return { stripeCustomerId: customer, eventType };
+  // The token charset mirrors what /api/checkout accepted when creating the
+  // session (base64url payload + signature); anything else is treated as if
+  // the field were absent rather than forwarded.
+  let upgradeToken: string | undefined;
+  const reference = event.data?.object?.client_reference_id;
+  if (typeof reference === 'string' && /^[A-Za-z0-9._~-]{1,500}$/.test(reference)) {
+    upgradeToken = reference;
+  }
+  return { stripeCustomerId: customer, eventType, upgradeToken };
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +229,7 @@ export async function handleStripeWebhook(req: StripeWebhookRequest, res: Respon
     res.json({ received: true, forwarded: false });
     return;
   }
-  const { stripeCustomerId, eventType } = extracted;
+  const { stripeCustomerId, eventType, upgradeToken } = extracted;
 
   // 2) Forward to the Corpus internal endpoint with its exact signing contract.
   const target = (process.env.CORPUS_PREMIUM_URL || '').trim();
@@ -222,9 +241,17 @@ export async function handleStripeWebhook(req: StripeWebhookRequest, res: Respon
     return;
   }
 
-  // The forward body is EXACTLY these two fields — the Corpus endpoint
-  // rejects anything extra, which is the PII firewall.
-  const forwardBody = JSON.stringify({ stripe_customer_id: stripeCustomerId, event: eventType });
+  // The forward body is EXACTLY these fields — the Corpus endpoint rejects
+  // anything extra, which is the PII firewall. upgrade_token appears only
+  // when the session carried an upgrade link; it is opaque here (Corpus
+  // verifies it) and is signed into the HMAC like everything else.
+  const forwardBody = upgradeToken
+    ? JSON.stringify({
+        stripe_customer_id: stripeCustomerId,
+        event: eventType,
+        upgrade_token: upgradeToken,
+      })
+    : JSON.stringify({ stripe_customer_id: stripeCustomerId, event: eventType });
   const timestamp = String(Math.floor(Date.now() / 1000)); // UNIX epoch seconds
   const signature = computeCorpusSignature(corpusSecret, timestamp, forwardBody);
 

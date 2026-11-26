@@ -9,14 +9,37 @@ import { executeRecaptcha } from '../lib/recaptcha';
  * This marketing site (corpuspremium.cybrnut.com) is the checkout host:
  * the CTA starts a Stripe Checkout Session (subscription mode) via the
  * server's POST /api/checkout and redirects to Stripe's hosted payment
- * page. No PII is collected here — after the payment the browser lands on
- * /thank-you or /cancel on this domain, and the Stripe webhook
+ * page. Card handling happens on Stripe's page; the optional billing
+ * e-mail below is used only for the server-side Stripe customer lookup
+ * (dedupe) and is never stored here. After the payment the browser lands
+ * on /thank-you or /cancel on this domain, and the Stripe webhook
  * (checkout.session.completed -> forwarder -> Corpus /internal/premium)
  * activates premium on the app side. New customers without an account
  * get the single-use claim e-mail (Corpus P2/P3) instead.
+ *
+ * Arriving from the Corpus app while signed in, the URL carries
+ * `?upgrade=<opaque-token>` (a short-lived HMAC token minted by Corpus).
+ * It is passed verbatim to /api/checkout, which puts it in the session's
+ * client_reference_id; this site does NOT verify it — when the session
+ * completes, the webhook forwards it back to Corpus as `upgrade_token`.
  */
 interface UpgradeSectionProps {
   onOpenLegal: (docId: LegalDoc['id']) => void;
+}
+
+/**
+ * Reads and sanitises the ?upgrade= parameter once, at mount. Anything that
+ * does not look like a token (empty, wrong charset, over Stripe's
+ * client_reference_id limit of 500) is dropped — the checkout then proceeds
+ * as a plain guest purchase.
+ */
+function readUpgradeToken(): string {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('upgrade')?.trim() ?? '';
+    return /^[A-Za-z0-9._~-]{1,500}$/.test(raw) ? raw : '';
+  } catch {
+    return '';
+  }
 }
 
 export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
@@ -25,6 +48,9 @@ export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
   // with Stripe's hosted checkout (window.location.assign).
   const [checkoutState, setCheckoutState] = useState<'idle' | 'starting' | 'error'>('idle');
   const [checkoutError, setCheckoutError] = useState('');
+  // The opaque upgrade token (if the URL carries one) is read exactly once.
+  const [upgradeToken] = useState(readUpgradeToken);
+  const [email, setEmail] = useState('');
 
   const startCheckout = async (): Promise<void> => {
     if (checkoutState === 'starting') {
@@ -38,7 +64,11 @@ export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recaptchaToken: token ?? '' }),
+        body: JSON.stringify({
+          recaptchaToken: token ?? '',
+          ...(upgradeToken ? { upgradeToken } : {}),
+          ...(email.trim() ? { email: email.trim() } : {}),
+        }),
       });
       const data = (await response.json().catch(() => ({}))) as {
         url?: string;
@@ -173,6 +203,26 @@ export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
                   here on the thank-you page — activation shows up in the Corpus app within
                   seconds.
                 </p>
+
+                <div className="mt-5">
+                  <label className="block">
+                    <span className="font-mono text-xs text-[#7E9AA6]">
+                      Billing e-mail (optional)
+                    </span>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="mt-1.5 w-full max-w-xs px-3 py-2 rounded-lg bg-[#08161E] border border-[#234352] focus:border-[#22D3EE] text-sm text-[#F4FAFC] placeholder:text-[#4A6470] focus:outline-none transition-colors"
+                    />
+                  </label>
+                  <p className="mt-1.5 text-xs leading-relaxed text-[#4A6470]">
+                    If you have purchased before, add that e-mail and we reuse your existing
+                    Stripe account instead of creating a new one.
+                  </p>
+                </div>
 
                 <button
                   type="button"

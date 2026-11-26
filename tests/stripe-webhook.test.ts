@@ -5,9 +5,10 @@
  *
  * Hermetic by design: the handler-level cases stub globalThis.fetch (no real
  * Stripe, no real Corpus call) — bad Stripe signature -> 400, valid event ->
- * correctly signed forward, and Corpus 503 -> 5xx so Stripe retries. The
- * final case boots the real express mount (server.ts) to guard the live bug
- * where express.raw's Buffer lived in req.body, not req.rawBody.
+ * correctly signed forward (2 fields, or 3 when the session carried an
+ * upgrade token in client_reference_id), and Corpus 503 -> 5xx so Stripe
+ * retries. The final case boots the real express mount (server.ts) to guard
+ * the live bug where express.raw's Buffer lived in req.body, not req.rawBody.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,12 +25,14 @@ const CORPUS_SECRET = 'corp…6789';
 const CORPUS_URL = 'https://corpus-api.test.local/internal/premium';
 
 /** Stripe-style event: only what the handler may touch. */
-function makeEvent(type: string, customer: string): Buffer {
+function makeEvent(type: string, customer: string, clientReferenceId?: string): Buffer {
+  const object: Record<string, unknown> = { customer, id: 'obj_test1' };
+  if (clientReferenceId !== undefined) object.client_reference_id = clientReferenceId;
   const body = JSON.stringify({
     id: 'evt_test1',
     type,
     object: 'event',
-    data: { object: { customer, id: 'obj_test1' } },
+    data: { object },
   });
   return Buffer.from(body, 'utf8');
 }
@@ -168,6 +171,56 @@ test('Corpus answers 503 -> 5xx so Stripe retries', async () => {
 
   assert.ok(res.code >= 500 && res.code < 600, `expected 5xx, got ${res.code}: ${JSON.stringify(res.body)}`);
   assert.equal(calls.length, 1, 'the forward was attempted exactly once before failing to Stripe');
+});
+
+test('completed session with a client_reference_id forwards it as upgrade_token', async () => {
+  const token = 'eyJhIjoiYWNjIn0.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const rawBody = makeEvent('checkout.session.completed', 'cus_token99', token);
+  const calls = fetchStub(200, { ok: true, premium: true, upgraded: true });
+
+  const res = makeRes();
+  await handleStripeWebhook(
+    makeReq(rawBody, stripeSignature(WEBHOOK_SECRET, rawBody)),
+    res as unknown as ExpressResponse
+  );
+
+  assert.equal(res.code, 200, `expected 200, got ${res.code}: ${JSON.stringify(res.body)}`);
+  assert.equal(calls.length, 1);
+  const { init } = calls[0];
+  // Exactly the two corpus fields plus the opaque token — nothing else.
+  assert.equal(
+    init.body,
+    JSON.stringify({
+      stripe_customer_id: 'cus_token99',
+      event: 'checkout.session.completed',
+      upgrade_token: token,
+    })
+  );
+  const headers = init.headers as Record<string, string>;
+  const expected = crypto
+    .createHmac('sha256', CORPUS_SECRET)
+    .update(headers['X-Corpus-Timestamp'])
+    .update(init.body as string)
+    .digest('hex');
+  assert.equal(headers['X-Corpus-Signature'], expected, 'the 3-field body is signed');
+});
+
+test('a client_reference_id outside the token charset is dropped, 2-field forward stays', async () => {
+  const rawBody = makeEvent('checkout.session.completed', 'cus_test42', 'not a token with spaces');
+  const calls = fetchStub(200, { ok: true });
+
+  const res = makeRes();
+  await handleStripeWebhook(
+    makeReq(rawBody, stripeSignature(WEBHOOK_SECRET, rawBody)),
+    res as unknown as ExpressResponse
+  );
+
+  assert.equal(res.code, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].init.body,
+    JSON.stringify({ stripe_customer_id: 'cus_test42', event: 'checkout.session.completed' })
+  );
 });
 
 // ---------------------------------------------------------------------------
