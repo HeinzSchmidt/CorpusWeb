@@ -54,6 +54,11 @@ export function Footer({ onOpenLegal }: FooterProps) {
                 </a>
               </li>
               <li>
+                <a href="/docs" className="transition-colors hover:text-[#F4FAFC]">
+                  Documentation (how-to, Ollama)
+                </a>
+              </li>
+              <li>
                 <a href="#upgrade" className="transition-colors hover:text-[#F4FAFC]">
                   Upgrade to Premium ($4/mo)
                 </a>
