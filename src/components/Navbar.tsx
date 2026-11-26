@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { label: 'What is Corpus', href: '#what-is-corpus' },
   { label: 'Features', href: '#features' },
   { label: 'Security', href: '#security' },
+  { label: 'Docs', href: '/docs' },
   { label: 'Upgrade', href: '#upgrade' },
   { label: 'Contact', href: '#contact' },
 ];
