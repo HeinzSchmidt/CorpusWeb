@@ -42,7 +42,11 @@ const ALLOWED_EVENT_TYPES = new Set([
   'invoice.payment_failed',
 ]);
 
-/** Express request with the raw body (express.raw sets req.rawBody itself). */
+/**
+ * Express request for the Stripe webhook. `express.raw()` stores the raw
+ * bytes in `req.body` as a Buffer; `req.rawBody` is a legacy alias kept for
+ * callers that invoke the handler directly (tests).
+ */
 export type StripeWebhookRequest = Request & { rawBody?: Buffer };
 
 /** The fetch Response type, spelled so it cannot collide with express's Response. */
@@ -159,8 +163,11 @@ export function extractForwardPayload(
  * never verify.
  */
 export async function handleStripeWebhook(req: StripeWebhookRequest, res: Response): Promise<void> {
-  const rawBody = req.rawBody;
+  // express.raw() puts the raw bytes in req.body; the legacy req.rawBody
+  // alias is only used by direct handler callers (tests).
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : req.rawBody;
   if (!rawBody || rawBody.length === 0) {
+    console.warn('[stripe-webhook] rejected: empty body');
     res.status(400).json({ error: 'Empty request body.' });
     return;
   }

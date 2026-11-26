@@ -240,10 +240,12 @@ async function startServer() {
 
   // Stripe webhook MUST be registered before the JSON parser: it verifies the
   // Stripe-Signature header over the RAW bytes, so express.raw keeps them in
-  // req.rawBody. A JSON-parsed-then-reserialized body would never verify.
+  // req.body (a Buffer). A JSON-parsed-then-reserialized body would never
+  // verify. The type list accepts any JSON content-type (Stripe sends
+  // application/json, possibly with a charset parameter).
   app.post(
     '/api/stripe/webhook',
-    express.raw({ type: 'application/json', limit: '256kb' }),
+    express.raw({ type: ['application/json', '+json'], limit: '256kb' }),
     (req, res) => void handleStripeWebhook(req as StripeWebhookRequest, res)
   );
 

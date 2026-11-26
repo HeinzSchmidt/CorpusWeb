@@ -3,14 +3,16 @@
  *
  * Run: npm run test:webhook   (tsx --test tests/stripe-webhook.test.ts)
  *
- * Hermetic by design: globalThis.fetch is stubbed (no real Stripe, no real
- * Corpus call). The three cases are the ones from the brief: bad Stripe
- * signature -> 400, valid event -> correctly signed forward, and Corpus 503
- * -> 5xx so Stripe retries.
+ * Hermetic by design: the handler-level cases stub globalThis.fetch (no real
+ * Stripe, no real Corpus call) — bad Stripe signature -> 400, valid event ->
+ * correctly signed forward, and Corpus 503 -> 5xx so Stripe retries. The
+ * final case boots the real express mount (server.ts) to guard the live bug
+ * where express.raw's Buffer lived in req.body, not req.rawBody.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
+import { createServer, type Server } from 'node:http';
 import type { Response as ExpressResponse } from 'express';
 import {
   handleStripeWebhook,
@@ -57,12 +59,15 @@ function makeRes() {
   return res;
 }
 
-/** Minimal express Request carrying the raw body + one Stripe header. */
+/**
+ * Minimal express Request carrying the raw body + one Stripe header. The
+ * Buffer travels via `body` ONLY — that is what express.raw() produces
+ * (req.rawBody is a legacy alias the handler must not depend on).
+ */
 function makeReq(rawBody: Buffer, signatureHeader: string | undefined): StripeWebhookRequest {
   const headers: Record<string, string> = {};
   if (signatureHeader !== undefined) headers['stripe-signature'] = signatureHeader;
   const req = {
-    rawBody,
     body: rawBody,
     ip: '203.0.113.7',
     get(name: string) {
@@ -163,4 +168,121 @@ test('Corpus answers 503 -> 5xx so Stripe retries', async () => {
 
   assert.ok(res.code >= 500 && res.code < 600, `expected 5xx, got ${res.code}: ${JSON.stringify(res.body)}`);
   assert.equal(calls.length, 1, 'the forward was attempted exactly once before failing to Stripe');
+});
+
+// ---------------------------------------------------------------------------
+// Real express mount (regression for the live bug: express.raw stores the
+// raw bytes in req.body, NOT req.rawBody — every real Stripe delivery was
+// rejected with "Empty request body."). Boots server.ts on a test port,
+// stubs only the outbound Corpus call, and POSTs signed raw bytes through
+// the actual route.
+// ---------------------------------------------------------------------------
+const MOUNT_PORT = 45124;
+const MOUNT_BASE = `http://127.0.0.1:${MOUNT_PORT}`;
+
+test('real mount: signed raw body reaches the handler, empty body stays 400', async () => {
+  // The handler-level tests above have swapped globalThis.fetch with their
+  // own stubs — use the ORIGINAL fetch (saved in before()) for real HTTP.
+  const fetchBefore = realFetch;
+  const corpusCalls: Array<{ url: string; init?: RequestInit }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.startsWith(`${MOUNT_BASE}/`)) {
+      // Local server traffic goes through the real fetch; Connection: close
+      // keeps undici from holding sockets after the server is torn down.
+      const headers = new Headers(init?.headers);
+      headers.set('Connection', 'close');
+      return fetchBefore(input, { ...init, headers });
+    }
+    if (url === CORPUS_URL) {
+      corpusCalls.push({ url, init });
+      const payload = { ok: true, premium: true };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      } as unknown as Response;
+    }
+    return {
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+      text: async () => '',
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  process.env.PORT = String(MOUNT_PORT);
+  await import('../server.ts');
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const started = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('server did not start in time'));
+      }
+    }, 5000);
+    const poll = async () => {
+      if (settled) return;
+      try {
+        const res = await fetch(`${MOUNT_BASE}/api/recaptcha/config`);
+        if (res.status === 200) {
+          settled = true;
+          clearTimeout(started);
+          resolve();
+          return;
+        }
+      } catch {
+        // not listening yet
+      }
+      setTimeout(poll, 50);
+    };
+    poll();
+  });
+
+  try {
+    // 1) Signed event with a Stripe-style content-type (charset parameter):
+    //    must pass express.raw, verify, forward, and answer 200 {ok:true}.
+    const rawBody = makeEvent('checkout.session.completed', 'cus_mount42');
+    const res = await fetch(`${MOUNT_BASE}/api/stripe/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Stripe-Signature': stripeSignature(WEBHOOK_SECRET, rawBody),
+      },
+      body: new Uint8Array(rawBody),
+    });
+    // Read the body ONCE (the assert message evaluates eagerly and would
+    // otherwise consume it before the json() below).
+    const resText = await res.text();
+    assert.equal(res.status, 200, `expected 200, got ${res.status}: ${resText}`);
+    const data = JSON.parse(resText) as { ok?: boolean };
+    assert.equal(data.ok, true);
+    assert.equal(corpusCalls.length, 1, 'the raw body reached the handler and was forwarded once');
+    assert.equal(corpusCalls[0].url, CORPUS_URL);
+    assert.equal(
+      corpusCalls[0].init?.body,
+      JSON.stringify({ stripe_customer_id: 'cus_mount42', event: 'checkout.session.completed' })
+    );
+
+    // 2) Empty body -> the live-bug symptom must remain a 400 (now logged).
+    const empty = await fetch(`${MOUNT_BASE}/api/stripe/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: new Uint8Array(Buffer.alloc(0)),
+    });
+    assert.equal(empty.status, 400);
+    const emptyData = (await empty.json()) as { error?: string };
+    assert.match(emptyData.error ?? '', /empty request body/i);
+  } finally {
+    globalThis.fetch = fetchBefore;
+    // Tear down the listening server (same pattern as the checkout tests).
+    const handles = (process as unknown as { _getActiveHandles: () => unknown[] })._getActiveHandles();
+    for (const handle of handles) {
+      if (handle instanceof createServer && (handle as Server).listening) {
+        (handle as Server).close();
+      }
+    }
+  }
 });
