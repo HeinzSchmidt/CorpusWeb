@@ -1,10 +1,33 @@
+import React from 'react';
 import { Check, X } from 'lucide-react';
 import {
+  DOCS_GOOGLE_DRIVE,
   DOCS_HOW_TO,
   OLLAMA_BROWSER_CAVEAT,
   OLLAMA_CAPABILITY_ROWS,
   OLLAMA_PLATFORM_GUIDES,
 } from '../data/docsContent';
+
+/**
+ * Turns every occurrence of a link label inside a paragraph into an anchor
+ * (used by the how-to cards, e.g. "Google Drive" → the #google-drive setup
+ * guide below). Plain paragraphs pass through untouched.
+ */
+function linkifyParagraph(text: string, links: Array<{ text: string; href: string }>): React.ReactNode {
+  if (links.length === 0) return text;
+  const [first, ...rest] = links;
+  const idx = text.indexOf(first.text);
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <a href={first.href} className="text-[#22D3EE] underline underline-offset-2 hover:text-[#3CF0FC]">
+        {first.text}
+      </a>
+      {linkifyParagraph(text.slice(idx + first.text.length), rest)}
+    </>
+  );
+}
 
 /**
  * The /docs page: a short how-to for using Corpus plus the "Use your own
@@ -32,7 +55,7 @@ export function DocsPage() {
                 <div className="mt-3 space-y-3">
                   {step.body.map((paragraph, idx) => (
                     <p key={idx} className="text-sm leading-relaxed text-[#9CB3BE]">
-                      {paragraph}
+                      {linkifyParagraph(paragraph, step.links ?? [])}
                     </p>
                   ))}
                 </div>
@@ -118,6 +141,48 @@ export function DocsPage() {
           <p className="mt-6 max-w-3xl rounded-2xl border border-[#F2C94C]/40 bg-[#0C141A] p-5 text-sm leading-relaxed text-[#F2C94C]">
             Browser note: {OLLAMA_BROWSER_CAVEAT}
           </p>
+        </section>
+
+        {/* Google Drive OAuth setup */}
+        <section id={DOCS_GOOGLE_DRIVE.id} className="mt-16">
+          <h2 className="text-xl font-semibold text-[#F4FAFC]">{DOCS_GOOGLE_DRIVE.heading}</h2>
+          <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#9CB3BE]">{DOCS_GOOGLE_DRIVE.intro}</p>
+
+          <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
+            {DOCS_GOOGLE_DRIVE.steps.map((step) => (
+              <div key={step.label} className="rounded-2xl border border-[#172B35] bg-[#0C141A] p-7">
+                <p className="font-mono text-xs text-[#22D3EE]">{step.label}</p>
+                <p className="mt-3 text-sm font-bold text-[#F4FAFC]">{step.title}</p>
+                <div className="mt-3 space-y-3">
+                  {step.body.map((paragraph, idx) => (
+                    <p key={idx} className="text-sm leading-relaxed text-[#9CB3BE]">
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <h3 className="mt-10 text-base font-semibold text-[#F4FAFC]">Troubleshooting</h3>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-[#172B35] bg-[#0C141A]">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-[#172B35] font-mono text-xs text-[#CBDCE3]">
+                  <th className="px-6 py-3">Symptom</th>
+                  <th className="px-6 py-3">Fix</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DOCS_GOOGLE_DRIVE.troubleshooting.map((row) => (
+                  <tr key={row.problem} className="border-b border-[#172B35] last:border-b-0">
+                    <td className="px-6 py-4 align-top font-medium text-[#F4FAFC]">{row.problem}</td>
+                    <td className="px-6 py-4 leading-relaxed text-[#9CB3BE]">{row.fix}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </div>
