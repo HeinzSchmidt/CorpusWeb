@@ -1,24 +1,60 @@
-import { ArrowUpRight, Lock } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, ArrowUpRight, Lock } from 'lucide-react';
 import { COMPARISON_ROWS, CORPUS_APP_URL, type LegalDoc } from '../data/corpusData';
+import { executeRecaptcha } from '../lib/recaptcha';
 
 /**
  * "What is it? / Pay for Premium" upgrade section.
  *
- * Checkout no longer happens on this marketing site: account creation and
- * payment live on the Corpus app itself (Stripe-hosted checkout at
- * `${CORPUS_APP_URL}/premium`). This section keeps the pricing copy and the
- * free-vs-premium comparison, then hands off with a single primary CTA.
- * There are deliberately NO password, card, or PII fields anywhere here —
- * billing details are collected only by Stripe on the app side.
+ * This marketing site (corpuspremium.cybrnut.com) is the checkout host:
+ * the CTA starts a Stripe Checkout Session (subscription mode) via the
+ * server's POST /api/checkout and redirects to Stripe's hosted payment
+ * page. No PII is collected here — after the payment the browser lands on
+ * /thank-you or /cancel on this domain, and the Stripe webhook
+ * (checkout.session.completed -> forwarder -> Corpus /internal/premium)
+ * activates premium on the app side. New customers without an account
+ * get the single-use claim e-mail (Corpus P2/P3) instead.
  */
 interface UpgradeSectionProps {
   onOpenLegal: (docId: LegalDoc['id']) => void;
 }
 
 export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
-  // Same value as the app's STRIPE_CHECKOUT_SUCCESS_URL origin; the /premium
-  // route shows sign-in, the upgrade button, and the activation state.
-  const premiumUrl = `${CORPUS_APP_URL}/premium`;
+  // 'idle' -> 'starting' while POST /api/checkout runs; 'error' surfaces the
+  // server's PII-safe message. A successful start replaces the whole page
+  // with Stripe's hosted checkout (window.location.assign).
+  const [checkoutState, setCheckoutState] = useState<'idle' | 'starting' | 'error'>('idle');
+  const [checkoutError, setCheckoutError] = useState('');
+
+  const startCheckout = async (): Promise<void> => {
+    if (checkoutState === 'starting') {
+      return;
+    }
+    setCheckoutState('starting');
+    setCheckoutError('');
+    try {
+      // reCAPTCHA v3 token for the 'checkout' action (server-verified).
+      const { token } = await executeRecaptcha('checkout');
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recaptchaToken: token ?? '' }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
+      if (response.ok && typeof data.url === 'string' && data.url.startsWith('https://')) {
+        window.location.assign(data.url);
+        return;
+      }
+      setCheckoutError(typeof data.error === 'string' ? data.error : 'Could not start the checkout. Please try again.');
+      setCheckoutState('error');
+    } catch {
+      setCheckoutError('Could not start the checkout. Please check your connection and try again.');
+      setCheckoutState('error');
+    }
+  };
 
   return (
     <section id="upgrade" className="relative border-b border-[#172B35] bg-[#080E12]">
@@ -129,25 +165,35 @@ export function UpgradeSection({ onOpenLegal }: UpgradeSectionProps) {
                 </p>
               </div>
 
-              {/* Right: primary CTA to the app's /premium page */}
+              {/* Right: primary CTA — starts the Stripe checkout on this site */}
               <div className="flex flex-col justify-center lg:col-span-7">
                 <h3 className="text-lg font-semibold text-[#F4FAFC]">Ready to upgrade?</h3>
                 <p className="mt-2 text-sm leading-relaxed text-[#9CB3BE]">
-                  Continue in the Corpus app: sign in — or create your Corpus account — and
-                  complete the secure Stripe checkout there. Activation shows up in the app within
-                  seconds of payment.
+                  You will be taken to Stripe's secure checkout page. After payment you land back
+                  here on the thank-you page — activation shows up in the Corpus app within
+                  seconds.
                 </p>
 
-                <a
-                  href={premiumUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-6 inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-[#22D3EE] px-6 py-3.5 text-sm font-semibold text-[#061318] transition-colors duration-150 hover:bg-[#4AE0F5]"
+                <button
+                  type="button"
+                  onClick={startCheckout}
+                  disabled={checkoutState === 'starting'}
+                  className="mt-6 inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-[#22D3EE] px-6 py-3.5 text-sm font-semibold text-[#061318] transition-colors duration-150 hover:bg-[#4AE0F5] disabled:cursor-wait disabled:opacity-70"
                 >
                   <Lock className="h-4 w-4" aria-hidden="true" />
-                  <span>Upgrade to Corpus Premium — $4.00 / mo</span>
-                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                </a>
+                  <span>
+                    {checkoutState === 'starting'
+                      ? 'Starting secure checkout…'
+                      : 'Upgrade to Corpus Premium — $4.00 / mo'}
+                  </span>
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+
+                {checkoutState === 'error' && (
+                  <p className="mt-3 text-sm text-[#F87171]" role="alert">
+                    {checkoutError}
+                  </p>
+                )}
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-[#7E9AA6]">
                   <span>Powered by Stripe · PCI-DSS Level 1</span>

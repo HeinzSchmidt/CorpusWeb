@@ -34,6 +34,13 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       CORPUS_PREMIUM_HMAC_SECRET: ${CORPUS_PREMIUM_HMAC_SECRET:-}
       CORPUS_PREMIUM_URL: ${CORPUS_PREMIUM_URL:-https://corpus-api.cybrnut.com/internal/premium}
+      # Guest checkout (P4): Stripe Checkout Session creation. Checkout-write-
+      # only restricted key + price id; values stay in the untracked .env.
+      # Left empty here so /api/checkout fails closed (503) until provided.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PREMIUM_PRICE_ID: ${STRIPE_PREMIUM_PRICE_ID:-}
+      STRIPE_CHECKOUT_SUCCESS_URL: ${STRIPE_CHECKOUT_SUCCESS_URL:-}
+      STRIPE_CHECKOUT_CANCEL_URL: ${STRIPE_CHECKOUT_CANCEL_URL:-}
       # Optionally pin the site origin used for canonical/OG meta injection.
       # Left unset on purpose: server.ts derives it from the request Host
       # header, which correctly yields http://localhost:3500 locally.
