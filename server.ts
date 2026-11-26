@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
 
-const ALLOWED_ACTIONS = new Set(['register', 'contact'] as const);
+const ALLOWED_ACTIONS = new Set(['contact'] as const);
 const ALLOWED_TOPICS = new Set([
   'General Question',
   'Premium & Stripe Billing',
@@ -122,7 +122,7 @@ interface VerificationOutcome {
 
 async function verifyRecaptchaToken(
   token: unknown,
-  expectedAction: 'register' | 'contact',
+  expectedAction: 'contact',
   remoteIp?: string
 ): Promise<VerificationOutcome> {
   const { siteKey, secretKey, minScore } = getRecaptchaConfig();
@@ -259,51 +259,6 @@ async function startServer() {
     });
   });
 
-  // Protected Registration endpoint verified with Google reCAPTCHA v3
-  app.post('/api/register', async (req: Request, res: Response) => {
-    const clientIp = req.ip || 'unknown';
-    if (!checkRateLimit(clientIp)) {
-      res.status(429).json({ error: 'Too many requests. Please wait a few minutes and try again.' });
-      return;
-    }
-
-    const body = req.body as Record<string, unknown>;
-    const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
-    const email = typeof body.email === 'string' ? body.email.trim() : '';
-    const password = typeof body.password === 'string' ? body.password : '';
-    const acceptedTerms = body.acceptedTerms === true;
-
-    if (fullName.length < 2 || fullName.length > 120) {
-      res.status(400).json({ error: 'Please enter your full name.' });
-      return;
-    }
-    if (!EMAIL_REGEX.test(email) || email.length > 254) {
-      res
-        .status(400)
-        .json({ error: 'Please enter a valid email address for your Corpus account and Stripe receipt.' });
-      return;
-    }
-    if (password.length < 8 || password.length > 128) {
-      res.status(400).json({ error: 'Please choose a password between 8 and 128 characters.' });
-      return;
-    }
-    if (!acceptedTerms) {
-      res.status(400).json({ error: 'Please confirm that you accept the Terms of Use and Privacy Policy.' });
-      return;
-    }
-
-    const verification = await verifyRecaptchaToken(body.recaptchaToken, 'register', clientIp);
-    if (!verification.ok) {
-      res.status(verification.statusCode).json({ error: verification.error });
-      return;
-    }
-
-    res.status(200).json({
-      ok: true,
-      recaptchaVerified: verification.verified,
-    });
-  });
-
   // Protected Contact Form endpoint verified with Google reCAPTCHA v3
   app.post('/api/contact', async (req: Request, res: Response) => {
     const clientIp = req.ip || 'unknown';
@@ -357,14 +312,14 @@ async function startServer() {
 
     const body = req.body as Record<string, unknown>;
     const action = body.action;
-    if (typeof action !== 'string' || !ALLOWED_ACTIONS.has(action as 'register' | 'contact')) {
+    if (typeof action !== 'string' || !ALLOWED_ACTIONS.has(action as 'contact')) {
       res.status(400).json({ error: 'Invalid reCAPTCHA action.' });
       return;
     }
 
     const verification = await verifyRecaptchaToken(
       body.token,
-      action as 'register' | 'contact',
+      action as 'contact',
       clientIp
     );
 

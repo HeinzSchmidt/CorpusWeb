@@ -1,4 +1,4 @@
-export type RecaptchaAction = 'register' | 'contact';
+export type RecaptchaAction = 'contact';
 
 interface GrecaptchaInstance {
   ready: (callback: () => void) => void;
