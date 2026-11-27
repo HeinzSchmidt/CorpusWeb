@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { handleStripeWebhook, type StripeWebhookRequest } from './stripe.ts';
+import { getContactMailConfig, sendContactMail } from './server/contactEmail.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,22 +67,26 @@ interface RateEntry {
 const rateLimits = new Map<string, RateEntry>();
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_REQUESTS = 30;
+// The contact form gets its own, tighter per-IP budget so checkout traffic
+// cannot starve it (and vice versa).
+const CONTACT_RATE_MAX_REQUESTS = 5;
+const contactRateLimits = new Map<string, RateEntry>();
 
-function checkRateLimit(ip: string): boolean {
+function checkRateLimit(ip: string, store: Map<string, RateEntry>, max: number): boolean {
   const now = Date.now();
-  if (rateLimits.size > 5000) {
-    for (const [key, value] of rateLimits.entries()) {
+  if (store.size > 5000) {
+    for (const [key, value] of store.entries()) {
       if (now > value.resetAt) {
-        rateLimits.delete(key);
+        store.delete(key);
       }
     }
   }
-  const entry = rateLimits.get(ip);
+  const entry = store.get(ip);
   if (!entry || now > entry.resetAt) {
-    rateLimits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    store.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
     return true;
   }
-  if (entry.count >= RATE_MAX_REQUESTS) {
+  if (entry.count >= max) {
     return false;
   }
   entry.count += 1;
@@ -261,40 +266,78 @@ async function startServer() {
     });
   });
 
-  // Protected Contact Form endpoint verified with Google reCAPTCHA v3
+  // Protected Contact Form endpoint verified with Google reCAPTCHA v3.
+  // Delivers ONE e-mail to the team inbox (MAIL_* / CONTACT_TO env vars);
+  // every failure path returns 4xx JSON with ok:false — never ok:true when
+  // mail did not actually send, and never a 5xx (Cloudflare replaces 5xx
+  // bodies with a generic page, which would hide the real error).
   app.post('/api/contact', async (req: Request, res: Response) => {
-    const clientIp = req.ip || 'unknown';
-    if (!checkRateLimit(clientIp)) {
-      res.status(429).json({ error: 'Too many requests. Please wait a few minutes and try again.' });
+    const body = req.body as Record<string, unknown>;
+
+    // Honeypot: the form carries a hidden "website" field that real users
+    // never fill. If it is filled, pretend success silently (no mail, no
+    // reCAPTCHA, no tip-off) and return before any other work.
+    const honeypot = typeof body.website === 'string' ? body.website.trim() : '';
+    if (honeypot.length > 0) {
+      res.status(200).json({ ok: true });
       return;
     }
 
-    const body = req.body as Record<string, unknown>;
+    const clientIp = req.ip || 'unknown';
+    // Tighter, contact-specific per-IP budget (separate from checkout's).
+    if (!checkRateLimit(clientIp, contactRateLimits, CONTACT_RATE_MAX_REQUESTS)) {
+      res.status(429).json({ ok: false, error: 'Too many requests. Please wait a few minutes and try again.' });
+      return;
+    }
+
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
     const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
     const message = typeof body.message === 'string' ? body.message.trim() : '';
 
     if (name.length < 2 || name.length > 120) {
-      res.status(400).json({ error: 'Please enter your name.' });
+      res.status(400).json({ ok: false, error: 'Please enter your name.' });
       return;
     }
     if (!EMAIL_REGEX.test(email) || email.length > 254) {
-      res.status(400).json({ error: 'Please enter a valid email address so we can reply.' });
+      res.status(400).json({ ok: false, error: 'Please enter a valid email address so we can reply.' });
       return;
     }
     if (!ALLOWED_TOPICS.has(topic)) {
-      res.status(400).json({ error: 'Please select a valid inquiry topic.' });
+      res.status(400).json({ ok: false, error: 'Please select a valid inquiry topic.' });
       return;
     }
     if (message.length < 10 || message.length > 5000) {
-      res.status(400).json({ error: 'Please enter a message between 10 and 5000 characters.' });
+      res.status(400).json({ ok: false, error: 'Please enter a message between 10 and 5000 characters.' });
       return;
     }
 
     const verification = await verifyRecaptchaToken(body.recaptchaToken, 'contact', clientIp);
     if (!verification.ok) {
-      res.status(verification.statusCode).json({ error: verification.error });
+      res.status(verification.statusCode).json({ ok: false, error: verification.error });
+      return;
+    }
+
+    // Fail closed: contact mail must be fully configured before we accept a
+    // message. 4xx (not 5xx) so a misconfigured server surfaces as this JSON
+    // instead of Cloudflare's generic error page.
+    const mailConfig = getContactMailConfig();
+    if (!mailConfig) {
+      res
+        .status(400)
+        .json({ ok: false, error: 'The contact form is temporarily unavailable. Please try again later.' });
+      return;
+    }
+
+    try {
+      await sendContactMail(mailConfig, { name, email, topic, message });
+    } catch (err) {
+      // Log only the error kind — never the body, the submitter e-mail, or
+      // MAIL_SMTP_PASS.
+      console.warn(`[contact] mail delivery failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      res
+        .status(400)
+        .json({ ok: false, error: 'Your message could not be delivered right now. Please try again in a few minutes.' });
       return;
     }
 
@@ -319,7 +362,7 @@ async function startServer() {
   // ------------------------------------------------------------------
   app.post('/api/checkout', async (req: Request, res: Response) => {
     const clientIp = req.ip || 'unknown';
-    if (!checkRateLimit(clientIp)) {
+    if (!checkRateLimit(clientIp, rateLimits, RATE_MAX_REQUESTS)) {
       res.status(429).json({ error: 'Too many checkout attempts. Please wait and try again.' });
       return;
     }
@@ -467,7 +510,7 @@ async function startServer() {
   // Explicit verification endpoint if called directly by client workflows
   app.post('/api/recaptcha/verify', async (req: Request, res: Response) => {
     const clientIp = req.ip || 'unknown';
-    if (!checkRateLimit(clientIp)) {
+    if (!checkRateLimit(clientIp, rateLimits, RATE_MAX_REQUESTS)) {
       res.status(429).json({ error: 'Too many verification attempts. Please wait and try again.' });
       return;
     }

@@ -8,6 +8,7 @@ export function ContactSection() {
   const [email, setEmail] = useState('');
   const [topic, setTopic] = useState('General Question');
   const [message, setMessage] = useState('');
+  const [website, setWebsite] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -43,6 +44,10 @@ export function ContactSection() {
           topic,
           message: message.trim(),
           recaptchaToken: token,
+          // Honeypot: the hidden "website" field (below). Real users leave it
+          // empty; if a bot fills it, the server returns a silent success
+          // without sending any mail.
+          website,
         }),
       });
 
@@ -207,6 +212,22 @@ export function ContactSection() {
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder="Tell us how we can help with your Corpus workflow..."
                     className="mt-2 w-full resize-y rounded-lg border border-[#1E3642] bg-[#070C10] px-4 py-3 text-sm text-[#F4FAFC] placeholder-[#526B77] transition-colors focus:border-[#22D3EE] focus:outline-none"
+                  />
+                </div>
+
+                {/* Honeypot: visually hidden (display:none), not focusable,
+                    no real label. Humans never fill it; bots that do get a
+                    silent "success" on the server instead of mail. */}
+                <div className="hidden" aria-hidden="true">
+                  <input
+                    id="contact-website"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    placeholder="Website"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
                   />
                 </div>
 

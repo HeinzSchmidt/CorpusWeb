@@ -41,6 +41,16 @@ services:
       STRIPE_PREMIUM_PRICE_ID: ${STRIPE_PREMIUM_PRICE_ID:-}
       STRIPE_CHECKOUT_SUCCESS_URL: ${STRIPE_CHECKOUT_SUCCESS_URL:-}
       STRIPE_CHECKOUT_CANCEL_URL: ${STRIPE_CHECKOUT_CANCEL_URL:-}
+      # Contact form delivery (POST /api/contact): nodemailer SMTP +
+      # recipient. Values stay in the untracked .env; empty by default so
+      # the route fails closed (4xx JSON) until provided. CONTACT_TO is
+      # optional — when unset, enquiries go to MAIL_FROM.
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-}
+      MAIL_SMTP_USER: ${MAIL_SMTP_USER:-}
+      MAIL_SMTP_PASS: ${MAIL_SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      CONTACT_TO: ${CONTACT_TO:-}
       # Optionally pin the site origin used for canonical/OG meta injection.
       # Left unset on purpose: server.ts derives it from the request Host
       # header, which correctly yields http://localhost:3500 locally.
