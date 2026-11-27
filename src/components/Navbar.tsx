@@ -1,28 +1,39 @@
 import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
+import { homeSectionHref } from '../lib/homeSectionHref';
 
 interface NavbarProps {
-  onNavigateUpgrade: () => void;
+  onNavigateUpgrade: (e?: React.MouseEvent) => void;
 }
 
-const NAV_LINKS = [
-  { label: 'What is Corpus', href: '#what-is-corpus' },
-  { label: 'Features', href: '#features' },
-  { label: 'Security', href: '#security' },
-  { label: 'Docs', href: '/docs' },
-  { label: 'Upgrade', href: '#upgrade' },
-  { label: 'Contact', href: '#contact' },
+/**
+ * Section entries resolve their href per render via homeSectionHref: on the
+ * home route that is "#features", off-home (e.g. /docs) it is "/#features".
+ * Path-only links (Docs) keep their static href.
+ */
+const NAV_LINKS: Array<{ label: string; section?: string; path?: string }> = [
+  { label: 'What is Corpus', section: 'what-is-corpus' },
+  { label: 'Features', section: 'features' },
+  { label: 'Security', section: 'security' },
+  { label: 'Docs', path: '/docs' },
+  { label: 'Upgrade', section: 'upgrade' },
+  { label: 'Contact', section: 'contact' },
 ];
 
 export function Navbar({ onNavigateUpgrade }: NavbarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = window.location.pathname;
+  const navItems = NAV_LINKS.map((item) => ({
+    label: item.label,
+    href: item.path ?? homeSectionHref(item.section!, pathname),
+  }));
 
   return (
     <header className="sticky top-0 z-40 border-b border-[#172B35] bg-[#070C10]/90 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-8 px-6">
         {/* Zone 1: Single-line brand mark and wordmark */}
         <a
-          href="#top"
+          href={homeSectionHref('top', pathname)}
           className="inline-flex items-center gap-2.5 whitespace-nowrap shrink-0"
           aria-label="Corpus Home"
         >
@@ -40,7 +51,7 @@ export function Navbar({ onNavigateUpgrade }: NavbarProps) {
           aria-label="Primary navigation"
           className="hidden md:flex items-center gap-7 text-sm font-medium text-[#9CB3BE]"
         >
-          {NAV_LINKS.map((item) => (
+          {navItems.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -54,7 +65,7 @@ export function Navbar({ onNavigateUpgrade }: NavbarProps) {
         {/* Zone 3: Single primary action */}
         <div className="flex items-center gap-3 shrink-0">
           <a
-            href="#upgrade"
+            href={homeSectionHref('upgrade', pathname)}
             onClick={onNavigateUpgrade}
             className="hidden sm:inline-flex items-center justify-center rounded-lg bg-[#22D3EE] px-4 py-2 text-xs font-semibold text-[#061318] transition-colors duration-150 hover:bg-[#4AE0F5] whitespace-nowrap shrink-0"
           >
@@ -79,7 +90,7 @@ export function Navbar({ onNavigateUpgrade }: NavbarProps) {
           className="border-t border-[#172B35] bg-[#0A1117] px-6 py-4 md:hidden"
         >
           <div className="flex flex-col gap-3">
-            {NAV_LINKS.map((item) => (
+            {navItems.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
@@ -90,10 +101,10 @@ export function Navbar({ onNavigateUpgrade }: NavbarProps) {
               </a>
             ))}
             <a
-              href="#upgrade"
-              onClick={() => {
+              href={homeSectionHref('upgrade', pathname)}
+              onClick={(e) => {
                 setMobileOpen(false);
-                onNavigateUpgrade();
+                onNavigateUpgrade(e);
               }}
               className="mt-2 inline-flex items-center justify-center rounded-lg bg-[#22D3EE] px-4 py-2.5 text-sm font-semibold text-[#061318]"
             >

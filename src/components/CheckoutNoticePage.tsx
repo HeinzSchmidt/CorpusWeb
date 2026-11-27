@@ -50,7 +50,7 @@ export function CheckoutNoticePage({ kind }: { kind: 'thank-you' | 'cancelled' }
         </a>
         {!isSuccess && (
           <a
-            href="#upgrade"
+            href="/#upgrade"
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#234352] px-5 py-3 text-sm font-semibold text-[#CBDCE3] transition-colors duration-150 hover:bg-[#0C141A]"
           >
             <span>Back to the pricing section</span>
