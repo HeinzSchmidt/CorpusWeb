@@ -1,11 +1,16 @@
 import { ArrowUpRight } from 'lucide-react';
 import { CORPUS_APP_URL, type LegalDoc } from '../data/corpusData';
+import { homeSectionHref } from '../lib/homeSectionHref';
 
 interface FooterProps {
   onOpenLegal: (docId: LegalDoc['id']) => void;
 }
 
 export function Footer({ onOpenLegal }: FooterProps) {
+  // Same rule as the Navbar: home section links point at "#id" on "/" and
+  // at "/#id" from other routes (the home ids do not exist on e.g. /docs).
+  const pathname = window.location.pathname;
+  const sectionHref = (id: string) => homeSectionHref(id, pathname);
   return (
     <footer className="bg-[#060A0E]">
       <div className="mx-auto max-w-[1200px] px-6 py-14 md:py-16">
@@ -13,7 +18,7 @@ export function Footer({ onOpenLegal }: FooterProps) {
           {/* Brand column */}
           <div className="md:col-span-5">
             <a
-              href="#top"
+              href={sectionHref('top')}
               className="inline-flex items-center gap-2.5 whitespace-nowrap"
               aria-label="Corpus Home"
             >
@@ -39,17 +44,17 @@ export function Footer({ onOpenLegal }: FooterProps) {
             <h3 className="font-mono text-xs text-[#CBDCE3]">Corpus</h3>
             <ul className="mt-4 space-y-2.5 text-sm text-[#89A3AF]">
               <li>
-                <a href="#what-is-corpus" className="transition-colors hover:text-[#F4FAFC]">
+                <a href={sectionHref('what-is-corpus')} className="transition-colors hover:text-[#F4FAFC]">
                   What is Corpus
                 </a>
               </li>
               <li>
-                <a href="#features" className="transition-colors hover:text-[#F4FAFC]">
+                <a href={sectionHref('features')} className="transition-colors hover:text-[#F4FAFC]">
                   Features
                 </a>
               </li>
               <li>
-                <a href="#security" className="transition-colors hover:text-[#F4FAFC]">
+                <a href={sectionHref('security')} className="transition-colors hover:text-[#F4FAFC]">
                   Security Architecture
                 </a>
               </li>
@@ -59,12 +64,12 @@ export function Footer({ onOpenLegal }: FooterProps) {
                 </a>
               </li>
               <li>
-                <a href="#upgrade" className="transition-colors hover:text-[#F4FAFC]">
+                <a href={sectionHref('upgrade')} className="transition-colors hover:text-[#F4FAFC]">
                   Upgrade to Premium ($4/mo)
                 </a>
               </li>
               <li>
-                <a href="#contact" className="transition-colors hover:text-[#F4FAFC]">
+                <a href={sectionHref('contact')} className="transition-colors hover:text-[#F4FAFC]">
                   Contact Developers
                 </a>
               </li>

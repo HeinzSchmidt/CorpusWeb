@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 import { WhatIsCorpusSection } from './components/WhatIsCorpusSection';
@@ -32,6 +32,27 @@ export default function App() {
     void preloadRecaptcha();
   }, []);
 
+  // Home-route hash scrolling. Home section ids (#top, #what-is-corpus, …)
+  // only exist on "/": a fresh load onto "/#upgrade" (e.g. from /docs or the
+  // cancel page) paints React after the browser's native hash scroll, so we
+  // scroll to the hash ourselves — on mount and on every in-page hashchange.
+  // Docs in-page hashes (#how-to, #ollama, #google-drive) are never touched:
+  // this effect is a no-run on non-home routes, and the id list below is
+  // home-only.
+  useEffect(() => {
+    const onHome = window.location.pathname === '/' || window.location.pathname === '';
+    if (!onHome) return;
+    const HOME_SECTION_IDS = ['top', 'what-is-corpus', 'features', 'security', 'upgrade', 'contact'];
+    const scrollToHash = () => {
+      const id = window.location.hash.replace(/^#/, '');
+      if (!HOME_SECTION_IDS.includes(id)) return;
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+    };
+    scrollToHash();
+    window.addEventListener('hashchange', scrollToHash);
+    return () => window.removeEventListener('hashchange', scrollToHash);
+  }, []);
+
   useEffect(() => {
     if (isDocsRoute) {
       document.title = 'Documentation · Corpus';
@@ -42,7 +63,14 @@ export default function App() {
     }
   }, [isDocsRoute, isThankYouRoute, isCancelRoute]);
 
-  const scrollToUpgrade = () => {
+  // Navbar/Footer "Upgrade" anchors: on the home route prevent the default
+  // hash jump and smooth-scroll instead; off-home their href is "/#upgrade",
+  // so let that navigation proceed untouched (the mount effect above then
+  // scrolls to the section).
+  const scrollToUpgrade = (e?: MouseEvent) => {
+    const onHome = window.location.pathname === '/' || window.location.pathname === '';
+    if (!onHome) return;
+    e?.preventDefault();
     const el = document.getElementById('upgrade');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth' });
