@@ -51,7 +51,7 @@ export const INSPECTOR_REGIONS: InspectorRegion[] = [
     title: 'High-Contrast Asset Viewer & Timeline',
     description:
       'Review the most recent or selected image and video directly on the grid canvas, with every session asset indexed along the timeline strip beneath it.',
-    highlight: { top: '2.5%', left: '13.5%', width: '70.3%', height: '47%' },
+    highlight: { top: '4.8%', left: '20.3%', width: '54.6%', height: '42.6%' },
   },
   {
     id: 'image-stack',
@@ -59,7 +59,7 @@ export const INSPECTOR_REGIONS: InspectorRegion[] = [
     title: 'Visual Reference Conditioning',
     description:
       'Drop PNG, JPG, or WebP reference frames into the dedicated Image Generation Reference stack. References are sent only during image prompts to maintain style, composition, and subject continuity.',
-    highlight: { top: '3.2%', left: '84.4%', width: '15.2%', height: '14.5%' },
+    highlight: { top: '4.8%', left: '76.2%', width: '22.8%', height: '26.2%' },
   },
   {
     id: 'video-stack',
@@ -67,15 +67,15 @@ export const INSPECTOR_REGIONS: InspectorRegion[] = [
     title: 'Start Frame & End Frame Anchoring',
     description:
       'Assign explicit Start Frame and End Frame keyframes in the Video Generation Reference stack so motion models interpolate cleanly between two visual states.',
-    highlight: { top: '18.2%', left: '84.4%', width: '15.2%', height: '16%' },
+    highlight: { top: '31.4%', left: '76.2%', width: '22.8%', height: '27.2%' },
   },
   {
     id: 'system-prompts',
-    label: 'System Prompts',
-    title: 'Modality-Specific System Prompts',
+    label: 'Reference Prompts',
+    title: 'Reference Prompts Tab',
     description:
-      'Switch between independent TEXT, IMAGE, and VIDEO system prompt tabs. Keep art direction rules, output formatting, and negative constraints separate for each modality.',
-    highlight: { top: '34.8%', left: '84.4%', width: '15.2%', height: '64.2%' },
+      'Open the saved TEXT, IMAGE, and VIDEO prompt collections for the active session from the REFERENCE PROMPTS tab in the top bar.',
+    highlight: { top: '0.8%', left: '31.5%', width: '11.5%', height: '4.0%' },
   },
   {
     id: 'chat-composer',
@@ -83,7 +83,7 @@ export const INSPECTOR_REGIONS: InspectorRegion[] = [
     title: 'Multi-Provider Chat & Mode Switcher',
     description:
       'Work in a familiar conversational log while switching between TEXT, IMAGE, and VIDEO modes and selecting the exact LLM provider or model from the bottom routing bar.',
-    highlight: { top: '50.5%', left: '13.5%', width: '70.3%', height: '48.2%' },
+    highlight: { top: '48.2%', left: '20.3%', width: '54.6%', height: '50.5%' },
   },
 ];
 
