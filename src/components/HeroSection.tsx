@@ -109,14 +109,14 @@ export function HeroSection() {
 
           {/* Precision Bezel Frame holding Screenshot1 */}
           <div className="mt-4 overflow-hidden rounded-2xl border border-[#1F3A47] bg-[#0B1217] shadow-[0_24px_80px_rgba(0,0,0,0.65)]">
-            <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#080E12]">
+            <div className="relative aspect-[2796/1574] w-full overflow-hidden bg-[#080E12]">
               {!shotFailed ? (
                 <img
                   src={ASSETS.screenshot}
-                  alt="Corpus web studio interface displaying the preview canvas, chat session log, image and video reference stacks, and modality-specific system prompts"
+                  alt="Corpus web studio interface displaying the preview canvas, Reference Prompts tab, image and video reference panels, and the multi-provider chat composer"
                   referrerPolicy="no-referrer"
                   onError={() => setShotFailed(true)}
-                  className="h-full w-full object-cover object-top"
+                  className="h-full w-full object-contain object-top"
                 />
               ) : (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0A1218] p-8 text-center">
