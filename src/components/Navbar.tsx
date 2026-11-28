@@ -38,7 +38,7 @@ export function Navbar({ onNavigateUpgrade }: NavbarProps) {
           aria-label="Corpus Home"
         >
           <img
-            src="/assets/aistudio/corpus_mark_256_39206a8c.png"
+            src="/corpus-mark.png"
             alt=""
             referrerPolicy="no-referrer"
             className="h-9 w-9 shrink-0 object-contain"
